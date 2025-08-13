@@ -1,87 +1,116 @@
-# Spring Security – Core Concepts
+# Spring Security – Configuration Approaches
 
-## 1. Overview & Purpose
-- **Spring Security** is a **framework** that provides **authentication, authorization, and protection** against common attacks (CSRF, session fixation, etc.).
-- Designed to integrate seamlessly with **Spring-based applications**, but can also be used in non-Spring projects.
-- **Key advantage**: Highly customizable via filter-based architecture.
+## 1. Overview
+- Spring Security can be configured in **two major ways**:
+  1. **Legacy**: `WebSecurityConfigurerAdapter` (before Spring Security 5.7)
+  2. **Modern**: `SecurityFilterChain` bean (recommended since Spring Security 5.7)
+- Goal: Define how authentication, authorization, and other security aspects should work.
 
-## 2. High-Level Architecture
-- **Core idea**: Requests pass through a **chain of security filters** before reaching application logic.
-- Three main layers:
-    1. **Servlet Filter Chain** → Delegates to Spring Security filter chain.
-    2. **Authentication layer** → Identifies who the user is.
-    3. **Authorization layer** → Determines what the user can do.
-- **Primary components**:
-    - **Security Filters** (entry point for security logic)
-    - **AuthenticationManager** & **AuthenticationProvider**
-    - **SecurityContext & SecurityContextHolder**
-    - **AccessDecisionManager**
-
-## 3. Flow of Spring Security
-1. **Incoming request** hits **`DelegatingFilterProxy`** (configured in `web.xml` or auto-registered in Spring Boot).
-2. **DelegatingFilterProxy** delegates to `FilterChainProxy` (Spring Security's own filter chain).
-3. Filters process request in order:
-    - **Authentication Filters** (e.g., `UsernamePasswordAuthenticationFilter`)
-    - **Authorization Filters** (e.g., `FilterSecurityInterceptor`)
-4. If authentication succeeds:
-    - User details stored in **SecurityContextHolder** (thread-local).
-5. If authorization succeeds:
-    - Request reaches the controller.
-6. On logout or session end:
-    - **SecurityContext** is cleared.
-
-## 4. Authentication vs Authorization
-- **Authentication**:
-    - **Definition**: Verifying the *identity* of a user (username/password, tokens, etc.).
-    - **Example**: "Is this really Alice?"
-    - **Implementation**: `AuthenticationManager` & `AuthenticationProvider` perform checks.
-- **Authorization**:
-    - **Definition**: Deciding what actions an *authenticated* user is allowed to perform.
-    - **Example**: "Can Alice delete this file?"
-    - **Implementation**: `AccessDecisionManager` and configuration annotations (`@PreAuthorize`, `@Secured`).
-
-## 5. Security Filters & Filter Chain
-- **Filter-based architecture** means each security concern is handled by a dedicated filter.
-- Common filters (executed in a specific order):
-    - `SecurityContextPersistenceFilter` – Restores SecurityContext for request.
-    - `UsernamePasswordAuthenticationFilter` – Handles login form submissions.
-    - `BasicAuthenticationFilter` – Handles HTTP Basic auth.
-    - `BearerTokenAuthenticationFilter` – Handles JWT or OAuth2 tokens.
-    - `ExceptionTranslationFilter` – Catches security exceptions and redirects/returns error.
-    - `FilterSecurityInterceptor` – Final authorization check.
-- **Order matters** — misordering can break authentication/authorization flow.
-
-**Code Example – Custom Filter Registration**
+## 2. WebSecurityConfigurerAdapter (Legacy)
+- Abstract class for configuring security by **overriding methods**.
+- Common methods:
+  - `configure(HttpSecurity http)` → Set rules for authentication/authorization.
+  - `configure(AuthenticationManagerBuilder auth)` → Configure authentication providers.
+- Example:
 ```java
-http.addFilterBefore(new CustomFilter(), UsernamePasswordAuthenticationFilter.class);
+@EnableWebSecurity
+public class SecurityConfig extends WebSecurityConfigurerAdapter {
+
+    @Override
+    protected void configure(HttpSecurity http) throws Exception {
+        http
+            .authorizeRequests()
+                .antMatchers("/public/**").permitAll()
+                .anyRequest().authenticated()
+            .and()
+            .formLogin();
+    }
+}
 ```
+- **Status**: Deprecated in Spring Security 5.7 → use `SecurityFilterChain` instead.
 
-## 6. DelegatingFilterProxy
-- A **bridge** between the servlet container's filter chain and Spring's application context.
-- Registers a filter in `web.xml` (or auto in Boot) that **delegates** to a bean (`springSecurityFilterChain`).
+## 3. SecurityFilterChain (Modern)
+- Configured using a **`@Bean` method** in a `@Configuration` class.
+- Gives more flexibility and works better with functional programming style.
+- Must be used inside a class annotated with `@EnableWebSecurity` to activate Spring Security's web support.
+- Example:
+```java
+@Configuration
+@EnableWebSecurity
+public class SecurityConfig {
 
+    @Bean
+    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+        http
+            .authorizeHttpRequests(auth -> auth
+                .requestMatchers("/public/**").permitAll()
+                .anyRequest().authenticated()
+            )
+            .formLogin(Customizer.withDefaults())
+            .httpBasic(Customizer.withDefaults());
 
-## 7. Other Key Terms
-- **SecurityContext**: Holds authentication info for the current request.
-- **SecurityContextHolder**: Provides static access to the current SecurityContext.
-- **Authentication** object:
-    - Contains `principal` (user details), `credentials`, and `authorities`.
-- **GrantedAuthority**: Represents a role/privilege (`ROLE_ADMIN`, `ROLE_USER`).
-- **AuthenticationManager**:
-    - Entry point for authentication logic.
-    - Delegates to one or more **AuthenticationProviders**.
-- **AuthenticationProvider**:
-    - Performs actual authentication.
-    - Returns a fully authenticated `Authentication` object if successful.
-
-## 8. Default Behavior
-- Spring Boot auto-enables **form-based login** when `spring-boot-starter-security` is on the classpath.
-- A **built-in login page** is available at `/login`.
-- **All endpoints are secured** by default — authentication is required unless explicitly permitted.
-- A default user is created with a **random password**, printed in the console.
-- You can set up default username and password in the application.properties.
-
-```properties
-spring.security.user.name=admin
-spring.security.user.password=admin123
+        return http.build();
+    }
+}
 ```
+- Advantages over legacy:
+  - No need to extend a base class.
+  - Easier integration with Spring Boot auto-configuration.
+  - Promotes composition over inheritance.
+
+## 4. Configuring `HttpSecurity`
+`HttpSecurity` provides a fluent API to configure:
+1. **Authorization rules**
+   ```java
+   http.authorizeHttpRequests(auth -> auth
+       .requestMatchers("/admin/**").hasRole("ADMIN")
+       .requestMatchers("/user/**").hasAnyRole("USER", "ADMIN")
+       .anyRequest().authenticated()
+   );
+   ```
+2. **Session management**
+   ```java
+   http.sessionManagement(session -> session
+       .sessionCreationPolicy(SessionCreationPolicy.STATELESS) // useful for JWT APIs
+   );
+   ```
+3. **Login methods**
+  - **Form Login**:
+    ```java
+    http.formLogin(form -> form
+        .loginPage("/login")
+        .permitAll()
+    );
+    ```
+  - **HTTP Basic**:
+    ```java
+    http.httpBasic(Customizer.withDefaults());
+    ```
+4. **Security Headers**
+   ```java
+   http.headers(headers -> headers
+       .frameOptions().sameOrigin()
+   );
+   ```
+5. **CSRF**
+  - Enabled by default for web apps.
+  - Disable for stateless APIs:
+    ```java
+    http.csrf(csrf -> csrf.disable());
+    ```
+
+## 5. CSRF Protection
+- **Purpose**: Prevent **Cross-Site Request Forgery** — where an attacker tricks a logged-in user into making unwanted requests.
+- **How it works**:
+  - Server issues a unique token for each session/request.
+  - Token must be sent with every modifying request (POST, PUT, DELETE).
+  - Spring Security automatically checks this token.
+- **Enabled by default** in Spring Security.
+- **When to disable**:
+  - Stateless REST APIs (using JWT, OAuth2, etc.).
+  - Services where all requests are authenticated via tokens/headers, not cookies.
+- Example of disabling:
+```java
+http.csrf(csrf -> csrf.disable());
+```
+⚠️ Only disable CSRF if you fully understand the security implications.
