@@ -13,11 +13,14 @@ import java.beans.Encoder;
 
 @Service
 public class AuthService {
-    @Autowired
     private UserDetailsManager userDetailsManager;
+    private PasswordEncoder passwordEncoder;
 
     @Autowired
-    private PasswordEncoder passwordEncoder;
+    public AuthService(UserDetailsManager userDetailsManager, PasswordEncoder passwordEncoder) {
+        this.userDetailsManager = userDetailsManager;
+        this.passwordEncoder = passwordEncoder;
+    }
 
     public ResponseEntity<?> register(AuthRequest authRequest) {
         if (userDetailsManager.userExists(authRequest.getUsername())) {
@@ -27,7 +30,7 @@ public class AuthService {
         }
 
         UserDetails user = User.withUsername(authRequest.getUsername())
-                .password(passwordEncoder.encode(authRequest.getPassword()))
+                .password(authRequest.getPassword())
                 .roles("USER")
                 .build();
 
