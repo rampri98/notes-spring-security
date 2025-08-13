@@ -1,149 +1,106 @@
-# Spring Security – Authentication Basics
+# Spring Security – JDBC-Based Authentication
 
-## 1. Core components
-  - `UserDetails` → Represents user information.
-  - `UserDetailsService` → Loads user-specific data.
-  - `PasswordEncoder` → Handles password hashing & verification.
-  - `SecurityContextHolder` → Typically in Authentication storage.
+## 1. Overview
+- JDBC-based authentication allows Spring Security to **retrieve user credentials and authorities from a relational database**.
+- Works with **any database** that supports JDBC (MySQL, PostgreSQL, Oracle, etc.).
+- Can use:
+  1. **Default schema** expected by Spring Security.
+  2. **Custom schema** with custom SQL queries.
 
-## 2. `UserDetails`
-- Interface representing **a user** in Spring Security.
-- Must provide:
-  - `getUsername()` → Unique user identifier.
-  - `getPassword()` → Encrypted password.
-  - `getAuthorities()` → Roles/permissions.
-  - Account status checks (`isAccountNonExpired()`, etc.).
-- Example:
+## 2. Default Schema Approach
+- Spring Security expects **two main tables**:
+  1. **`users` table**
+     ```sql
+     CREATE TABLE users (
+         username VARCHAR(50) NOT NULL PRIMARY KEY,
+         password VARCHAR(100) NOT NULL,
+         enabled BOOLEAN NOT NULL
+     );
+     ```
+  2. **`authorities` table**
+     ```sql
+     CREATE TABLE authorities (
+         username VARCHAR(50) NOT NULL,
+         authority VARCHAR(50) NOT NULL,
+         CONSTRAINT fk_authorities_users FOREIGN KEY(username) REFERENCES users(username)
+     );
+     ```
+- **Default queries** used internally:
+  ```sql
+  SELECT username, password, enabled FROM users WHERE username = ?;
+  SELECT username, authority FROM authorities WHERE username = ?;
+  ```
+
+## 3. Configuring JDBC Authentication
+- **Modern `SecurityFilterChain` with `JdbcUserDetailsManager`**:
 ```java
-public class CustomUserDetails implements UserDetails {
-    private final User user; // your entity
+@Configuration
+@EnableWebSecurity
+public class SecurityConfig {
 
-    public CustomUserDetails(User user) {
-        this.user = user;
+    @Bean
+    public UserDetailsService userDetailsService(DataSource dataSource) {
+        return new JdbcUserDetailsManager(dataSource);
     }
 
-    @Override
-    public Collection<? extends GrantedAuthority> getAuthorities() {
-        return List.of(new SimpleGrantedAuthority(user.getRole()));
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
     }
 
-    @Override
-    public String getPassword() {
-        return user.getPassword();
-    }
+    @Bean
+    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+        http
+            .authorizeHttpRequests(auth -> auth
+                .anyRequest().authenticated()
+            )
+            .formLogin(Customizer.withDefaults());
 
-    @Override
-    public String getUsername() {
-        return user.getUsername();
-    }
-
-    @Override
-    public boolean isAccountNonExpired() { return true; }
-    @Override
-    public boolean isAccountNonLocked() { return true; }
-    @Override
-    public boolean isCredentialsNonExpired() { return true; }
-    @Override
-    public boolean isEnabled() { return true; }
-}
-```
-
-## 3. `UserDetailsService`
-- Interface for **loading user data** given a username.
-- Used by Spring Security during authentication.
-- Must return a `UserDetails` object.
-- Example:
-```java
-@Service
-public class CustomUserDetailsService implements UserDetailsService {
-
-    @Autowired
-    private UserRepository userRepository;
-
-    @Override
-    public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
-        User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new UsernameNotFoundException("User not found"));
-        return new CustomUserDetails(user);
+        return http.build();
     }
 }
 ```
-## 4. `UserDetailsManager`
-- Interface that extends `UserDetailsService` and adds **user management operations**. 
-- Allows creating, updating, deleting users, changing passwords, and checking if a user exists. 
-- Often implemented by InMemoryUserDetailsManager or JdbcUserDetailsManager. 
-- Useful when you need both authentication and dynamic user management.
-- Example:
-
-```java
-import org.springframework.beans.factory.annotation.Autowired;
-
-@Service
-public class CustomUserDetailsManager implements UserDetailsManager {
-  @Autowired
-  private final InMemoryUserDetailsManager delegate;
-
-  @Override
-  public void createUser(UserDetails user) {
-    delegate.createUser(user);
-  }
-  ...
-}
-
+- Requires a **`DataSource` bean** (configured via `application.properties`):
+```properties
+spring.datasource.url=jdbc:mysql://localhost:3306/mydb
+spring.datasource.username=root
+spring.datasource.password=secret
+spring.datasource.driver-class-name=com.mysql.cj.jdbc.Driver
 ```
 
-## 5. `PasswordEncoder`
-- Responsible for **hashing passwords** and **validating** entered passwords.
-- **Why hash?**
-  - Prevents storing plain-text passwords.
-  - Protects users if DB is compromised.
-- **Common implementations**:
-  - `BCryptPasswordEncoder` → Strong & salted hashing (recommended).
-  - `Pbkdf2PasswordEncoder`
-  - `Argon2PasswordEncoder`
-  - `NoOpPasswordEncoder` → For testing only (stores plain text).
-- Example:
+## 4. Custom Queries (Custom Schema)
+- If your table structure is different, you can set **custom queries**:
 ```java
 @Bean
-public PasswordEncoder passwordEncoder() {
-    return new BCryptPasswordEncoder();
+public UserDetailsService userDetailsService(DataSource dataSource) {
+    JdbcUserDetailsManager manager = new JdbcUserDetailsManager(dataSource);
+
+    manager.setUsersByUsernameQuery(
+        "SELECT user_name, user_pass, active FROM my_users WHERE user_name = ?"
+    );
+
+    manager.setAuthoritiesByUsernameQuery(
+        "SELECT user_name, role FROM my_roles WHERE user_name = ?"
+    );
+
+    return manager;
 }
 ```
-- **Password check flow**:
-  1. User enters password.
-  2. Encoder hashes the input.
-  3. Hash is compared to stored hash.
+- SQL must return columns in the **same order** Spring Security expects.
 
-## 6. In-Memory Authentication
-- Useful for demos, prototypes, or small apps.
-- Credentials are stored in memory (no DB).
-- Example (modern `SecurityFilterChain`):
-```java
-@Bean
-public InMemoryUserDetailsManager userDetailsService(PasswordEncoder encoder) {
-    UserDetails user = User.withUsername("user")
-        .password(encoder.encode("password"))
-        .roles("USER")
-        .build();
+## 5. When to Use JDBC Authentication
+✅ Good choice when:
+- Credentials are stored in a **relational database**.
+- You want to manage users via SQL tools or admin panels.
+- No external identity provider (like OAuth2) is used.
 
-    UserDetails admin = User.withUsername("admin")
-        .password(encoder.encode("admin123"))
-        .roles("ADMIN")
-        .build();
+⚠️ Not ideal when:
+- Using NoSQL databases → Consider custom `UserDetailsService`.
+- Using distributed token-based auth (e.g., JWT) → Prefer stateless authentication.
 
-    return new InMemoryUserDetailsManager(user, admin);
-}
-```
-- **Advantages**:
-  - Quick setup.
-  - No DB needed.
-- **Disadvantages**:
-  - Not persistent.
-  - Not scalable.
-
-## 7. How These Fit Together
-1. User attempts login.
-2. `AuthenticationManager` calls `UserDetailsService.loadUserByUsername()`.
-3. Retrieved `UserDetails` contains username, hashed password, and authorities.
-4. `PasswordEncoder` verifies provided password against stored hash.
-5. If valid → authentication success, store in `SecurityContextHolder`.
+## 6. How the Flow Works
+1. User submits username/password via form.
+2. `JdbcUserDetailsManager` queries the database.
+3. If username exists → retrieves encrypted password and authorities.
+4. `PasswordEncoder` validates password.
+5. On success → `Authentication` stored in `SecurityContextHolder`.
