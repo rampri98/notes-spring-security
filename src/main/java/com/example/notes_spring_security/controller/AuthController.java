@@ -1,6 +1,6 @@
 package com.example.notes_spring_security.controller;
 
-import com.example.notes_spring_security.entity.AuthRequest;
+import com.example.notes_spring_security.payload.AuthRequest;
 import com.example.notes_spring_security.service.AuthService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -18,5 +18,10 @@ public class AuthController {
     @PostMapping("/register")
     public ResponseEntity<?> registerUser(@RequestBody AuthRequest authRequest) {
         return authService.register(authRequest);
+    }
+
+    @PostMapping("/login")
+    public ResponseEntity<?> authenticateUser(@RequestBody AuthRequest authRequest) {
+        return authService.authenticateUser(authRequest);
     }
 }

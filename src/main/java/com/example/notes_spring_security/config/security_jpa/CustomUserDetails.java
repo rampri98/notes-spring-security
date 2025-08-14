@@ -1,7 +1,6 @@
-package com.example.notes_spring_security.config;
+package com.example.notes_spring_security.config.security_jpa;
 
 import com.example.notes_spring_security.entity.User;
-import lombok.Data;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;

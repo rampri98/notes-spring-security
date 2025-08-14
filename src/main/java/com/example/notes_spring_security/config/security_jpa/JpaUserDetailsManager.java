@@ -1,11 +1,9 @@
-package com.example.notes_spring_security.config;
+package com.example.notes_spring_security.config.security_jpa;
 
 import com.example.notes_spring_security.entity.Role;
 import com.example.notes_spring_security.entity.User;
 import com.example.notes_spring_security.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.security.core.GrantedAuthority;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;

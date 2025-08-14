@@ -1,6 +1,10 @@
 package com.example.notes_spring_security.config;
 
+import com.example.notes_spring_security.config.jwt.AuthEntryPointJwt;
+import com.example.notes_spring_security.config.jwt.AuthTokenFilter;
+import com.example.notes_spring_security.config.security_jpa.JpaUserDetailsManager;
 import com.example.notes_spring_security.repository.UserRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -15,10 +19,18 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.provisioning.UserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 @Configuration
 @EnableMethodSecurity
 public class SecurityConfig {
+    @Autowired
+    private AuthEntryPointJwt unauthorizedHandler;
+
+    @Bean
+    public AuthTokenFilter authenticationJwtTokenFilter() {
+        return new AuthTokenFilter();
+    }
 
     @Bean
     SecurityFilterChain getSecurityFilterChain(HttpSecurity http) throws Exception {
@@ -33,9 +45,10 @@ public class SecurityConfig {
             )
             .sessionManagement(customizer -> customizer.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .httpBasic(Customizer.withDefaults())
-            .headers(header ->
-                    header.frameOptions(HeadersConfigurer.FrameOptionsConfig::sameOrigin))
+            .headers(header -> header.frameOptions(HeadersConfigurer.FrameOptionsConfig::sameOrigin))
             .csrf(csrf -> csrf.disable())
+            .exceptionHandling(exception -> exception.authenticationEntryPoint(unauthorizedHandler))
+            .addFilterBefore(authenticationJwtTokenFilter(), UsernamePasswordAuthenticationFilter.class)
             .build();
     }
 
