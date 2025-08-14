@@ -5,14 +5,13 @@ import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
 import java.security.Key;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.Map;
 
 @Component
@@ -24,6 +23,9 @@ public class JwtUtils {
     @Value("${spring.app.jwtExpirationMs}")
     private int jwtExpirationMs;
 
+    @Value("${spring.app.refreshTokenExpirationMs}")
+    private int refreshTokenExpirationMs;
+
     public String getJwtFromHeader(HttpServletRequest request) {
         String bearerToken = request.getHeader("Authorization");
         if (bearerToken != null && bearerToken.startsWith("Bearer ")) {
@@ -32,13 +34,22 @@ public class JwtUtils {
         return null;
     }
 
-    public String generateTokenFromUsername(UserDetails userDetails) {
+    public String generateJwtTokenFromUsername(UserDetails userDetails) {
         String username = userDetails.getUsername();
         return Jwts.builder()
                 .subject(username)
                 .issuedAt(new Date())
                 .expiration(new Date((new Date()).getTime() + jwtExpirationMs))
                 .signWith(key())
+                .compact();
+    }
+
+    public String generateRefreshTokenFromUsername(String username) {
+        return Jwts.builder()
+                .subject(username)
+                .issuedAt(new Date())
+                .expiration(new Date((new Date()).getTime() + refreshTokenExpirationMs))
+                .signWith(key()) // Uses the same secret as access token
                 .compact();
     }
 
@@ -63,15 +74,24 @@ public class JwtUtils {
         return false;
     }
 
-    public String generateJwtTokenFromRefreshToken(String refreshToken) {
+    public Map<String, String> generateJwtTokenFromRefreshToken(String refreshToken) {
         if (validateRefreshToken(refreshToken)) {
             String username = getUserNameFromRefreshToken(refreshToken);
-            return Jwts.builder()
+            Map<String, String> map = new HashMap<>();
+            map.put("jwtToken", Jwts.builder()
                     .subject(username)
                     .issuedAt(new Date())
                     .expiration(new Date((new Date()).getTime() + jwtExpirationMs))
                     .signWith(key())
-                    .compact();
+                    .compact());
+            map.put("refreshToken", Jwts.builder()
+                    .subject(username)
+                    .issuedAt(new Date())
+                    .expiration(new Date((new Date()).getTime() + refreshTokenExpirationMs))
+                    .signWith(key())
+                    .compact());
+
+            return map;
         }
         return null;
     }

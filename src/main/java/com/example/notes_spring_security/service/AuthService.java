@@ -79,7 +79,8 @@ public class AuthService {
 
         UserDetails userDetails = (UserDetails) authentication.getPrincipal();
 
-        String jwtToken = jwtUtils.generateTokenFromUsername(userDetails);
+        String jwtToken = jwtUtils.generateJwtTokenFromUsername(userDetails);
+        String refreshToken = jwtUtils.generateJwtTokenFromUsername(userDetails);
 
         List<Role> roles = userDetails.getAuthorities().stream()
                 .map(item -> Role.valueOf(item.getAuthority()))
@@ -89,7 +90,19 @@ public class AuthService {
                                     .username(userDetails.getUsername())
                                     .roles(roles)
                                     .jwtToken(jwtToken)
+                                    .refreshToken(refreshToken)
                                     .build();
         return ResponseEntity.ok(response);
+    }
+
+    public ResponseEntity<?> reAuthenticateUser(@RequestBody String refreshToken) {
+        Map<String, String> tokens = jwtUtils.generateJwtTokenFromRefreshToken(refreshToken);
+        if(tokens == null) {
+            Map<String, Object> map = new HashMap<>();
+            map.put("message", "Bad credentials");
+            map.put("status", false);
+            return new ResponseEntity<>(map, HttpStatus.NOT_FOUND);
+        }
+        return ResponseEntity.ok(tokens);
     }
 }
