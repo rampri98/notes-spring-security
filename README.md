@@ -61,17 +61,46 @@ public interface UserRepository extends JpaRepository<User, Long> {
 ```
 
 ## 5. `UserDetails` Implementation
-- getAuthorities
-- getPassword
-- getUsername
+```java
+public class CustomUserDetails implements UserDetails {
+    private final User user;
 
-## 6. `UserDetailsManager` Implementation
-- loadUserByUsername
-- createUser
-- updateUser
-- deleteUser
-- changePassword
-- userExists
+    public CustomUserDetails(User user) {
+        this.user = user;
+    }
+
+    @Override
+    public Collection<? extends GrantedAuthority> getAuthorities() {
+        return user.getRoles()
+                   .stream()
+                   .map(role -> new SimpleGrantedAuthority(role.getName()))
+                   .toList();
+    }
+
+    @Override
+    public String getPassword() { return user.getPassword(); }
+
+    @Override
+    public String getUsername() { return user.getUsername(); }
+}
+```
+
+## 6. `UserDetailsManager` Implementation (UserDetailsService + other implementations)
+```java
+@Service
+public class CustomUserDetailsService implements UserDetailsService {
+
+  @Autowired
+  private UserRepository userRepository;
+
+  @Override
+  public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
+    User user = userRepository.findByUsername(username)
+            .orElseThrow(() -> new UsernameNotFoundException("User not found"));
+    return new CustomUserDetails(user);
+  }
+}
+```
 
 
 ## 7. Security Configuration

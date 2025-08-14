@@ -1,5 +1,6 @@
 package com.example.notes_spring_security.config;
 
+import com.example.notes_spring_security.entity.Role;
 import com.example.notes_spring_security.entity.User;
 import com.example.notes_spring_security.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,15 +28,8 @@ public class JpaUserDetailsManager implements UserDetailsManager {
     @Override
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
         User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new UsernameNotFoundException("User not found: " + username));
-
-        return new org.springframework.security.core.userdetails.User(
-                user.getUsername(),
-                user.getPassword(),
-                user.getRoles().stream()
-                        .map(role -> new SimpleGrantedAuthority("ROLE_" + role))
-                        .collect(Collectors.toList())
-        );
+                .orElseThrow(() -> new UsernameNotFoundException("User not found"));
+        return new CustomUserDetails(user);
     }
 
     @Override
@@ -50,8 +44,8 @@ public class JpaUserDetailsManager implements UserDetailsManager {
         user.setEnabled(true);
 
         // Convert authorities to role names
-        Set<String> roles = userDetails.getAuthorities().stream()
-                .map(GrantedAuthority::getAuthority)
+        Set<Role> roles = userDetails.getAuthorities().stream()
+                .map(grantedAuthority -> Role.valueOf(grantedAuthority.getAuthority()))
                 .collect(Collectors.toSet());
         user.setRoles(roles);
 
@@ -65,8 +59,8 @@ public class JpaUserDetailsManager implements UserDetailsManager {
 
         user.setPassword(passwordEncoder.encode(userDetails.getPassword()));
 
-        Set<String> roles = userDetails.getAuthorities().stream()
-                .map(GrantedAuthority::getAuthority)
+        Set<Role> roles = userDetails.getAuthorities().stream()
+                .map(grantedAuthority -> Role.valueOf(grantedAuthority.getAuthority()))
                 .collect(Collectors.toSet());
         user.setRoles(roles);
 

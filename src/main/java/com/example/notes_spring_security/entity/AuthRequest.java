@@ -1,25 +1,14 @@
 package com.example.notes_spring_security.entity;
 
+import lombok.Data;
 import org.springframework.stereotype.Component;
 
+import java.util.Set;
+
 @Component
+@Data
 public class AuthRequest {
     private String username;
     private String password;
-
-    public String getUsername() {
-        return username;
-    }
-
-    public void setUsername(String username) {
-        this.username = username;
-    }
-
-    public String getPassword() {
-        return password;
-    }
-
-    public void setPassword(String password) {
-        this.password = password;
-    }
+    private Set<Role> roles;
 }

@@ -18,5 +18,8 @@ public class User {
     private String username;
     private String password;
     private boolean enabled;
-    private Set<String> roles = new HashSet<>();
+
+    @ElementCollection(fetch = FetchType.EAGER)
+    @Enumerated(EnumType.STRING)
+    private Set<Role> roles = new HashSet<>();
 }
