@@ -1,128 +1,110 @@
-# Spring Security – JPA-Based Authentication
+# Spring Security – Authorization Basics
 
 ## 1. Overview
-- JPA-based authentication stores and retrieves user credentials from a **relational database** using **Spring Data JPA** instead of raw JDBC.
-- Benefits over JDBC approach:
-    - Works with entity classes and repositories.
-    - No need to write SQL manually (unless customizing queries).
-    - Integrates seamlessly with Spring Boot and ORM mapping.
+- **Authorization** determines **what** an authenticated user is allowed to do.
+- Works together with **Authentication** (who the user is).
+- Implemented at multiple levels:
+  1. **Role-based access control (RBAC)**
+  2. **URL-based access control**
+  3. **Method-level security**
 
-## 2. Core Components
-- **Entity classes**: Represent `User` and possibly `Role` tables.
-- **Repository interface**: Extends `JpaRepository` to query users.
-- **Custom `UserDetails` implementation**: Wraps the entity into Spring Security’s `UserDetails`.
-- **Custom `UserDetailsService` implementation**: Reads user data from repository.
-- - **Custom `UserDetailsManager` implementation**: Reads + writes user data from repository.
-- **PasswordEncoder**: Encrypts passwords before saving, and verifies during authentication.
+---
 
-## 3. Example Entity Classes
+## 2. Role-Based Access Control
+- **Roles**: High-level grouping of permissions.
+- Spring Security uses **`hasRole()`** and **`hasAuthority()`** methods.
+- **Key Difference**:
+  - `hasRole("ADMIN")` → internally adds `"ROLE_"` prefix (becomes `"ROLE_ADMIN"`).
+  - `hasAuthority("ROLE_ADMIN")` → must use full authority name.
+
+**Example** – Role-based access in `HttpSecurity`:
 ```java
-@Entity
-@Table(name = "users")
-public class User {
+http.authorizeHttpRequests(auth -> auth
+    .requestMatchers("/admin/**").hasRole("ADMIN")
+    .requestMatchers("/user/**").hasAnyRole("USER", "ADMIN")
+    .anyRequest().authenticated()
+);
+```
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+---
 
-    private String username;
-    private String password;
-    private boolean enabled;
+## 3. URL-Based Access Control
+- Controlled through **`HttpSecurity`** configuration.
+- Matches **request paths** to authorization rules.
 
-    @ManyToMany(fetch = FetchType.EAGER)
-    @JoinTable(
-        name = "users_roles",
-        joinColumns = @JoinColumn(name = "user_id"),
-        inverseJoinColumns = @JoinColumn(name = "role_id")
-    )
-    private Set<Role> roles = new HashSet<>();
-
-    // getters and setters
-}
-
-@Entity
-@Table(name = "roles")
-public class Role {
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-
-    private String name; // e.g., ROLE_USER, ROLE_ADMIN
-
-    // getters and setters
+**Example** – URL-based restrictions:
+```java
+@Bean
+public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    http
+        .authorizeHttpRequests(auth -> auth
+            .requestMatchers("/public/**").permitAll()
+            .requestMatchers("/admin/**").hasRole("ADMIN")
+            .requestMatchers("/profile/**").authenticated()
+        )
+        .formLogin(Customizer.withDefaults());
+    return http.build();
 }
 ```
 
-## 4. Repository Layer
+---
+
+## 4. Method-Level Security
+- Allows **fine-grained control** on service-layer methods.
+- Requires enabling with `@EnableMethodSecurity` (Spring Security 6+) or `@EnableGlobalMethodSecurity` (pre-6).
+
 ```java
-public interface UserRepository extends JpaRepository<User, Long> {
-    Optional<User> findByUsername(String username);
-}
+@Configuration
+@EnableMethodSecurity // For Spring Security 6+
+public class SecurityConfig { }
 ```
 
-## 5. `UserDetails` Implementation
-```java
-public class CustomUserDetails implements UserDetails {
-    private final User user;
+**Annotations**:
+- `@PreAuthorize` → Checks before method executes.
+- `@PostAuthorize` → Checks after method executes (can inspect returned object).
 
-    public CustomUserDetails(User user) {
-        this.user = user;
-    }
-
-    @Override
-    public Collection<? extends GrantedAuthority> getAuthorities() {
-        return user.getRoles()
-                   .stream()
-                   .map(role -> new SimpleGrantedAuthority(role.getName()))
-                   .toList();
-    }
-
-    @Override
-    public String getPassword() { return user.getPassword(); }
-
-    @Override
-    public String getUsername() { return user.getUsername(); }
-}
-```
-
-## 6. `UserDetailsManager` Implementation (UserDetailsService + other implementations)
+**Examples**:
 ```java
 @Service
-public class CustomUserDetailsService implements UserDetailsService {
+public class UserService {
 
-  @Autowired
-  private UserRepository userRepository;
+    @PreAuthorize("hasRole('ADMIN')")
+    public void deleteUser(Long id) {
+        // Only admins can delete users
+    }
 
-  @Override
-  public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
-    User user = userRepository.findByUsername(username)
-            .orElseThrow(() -> new UsernameNotFoundException("User not found"));
-    return new CustomUserDetails(user);
-  }
+    @PreAuthorize("#username == authentication.name")
+    public User getUserProfile(String username) {
+        // User can only see their own profile
+    }
+
+    @PostAuthorize("returnObject.owner == authentication.name")
+    public Document getDocument(Long id) {
+        // Only the owner can access document after retrieval
+    }
 }
 ```
 
+---
 
-## 7. Security Configuration
-- SecurityFilterChain
-- PasswordEncoder
-- UserDetailsManager
-- AuthenticationManager
+## 5. Expression-Based Access Control
+- Spring Security supports **SpEL (Spring Expression Language)** in annotations.
+- Common variables:
+  - `authentication` → current Authentication object.
+  - `principal` → current UserDetails object.
+  - `#paramName` → method parameter.
+- Example:
+```java
+@PreAuthorize("#id == principal.id or hasRole('ADMIN')")
+public void updateUser(Long id) { ... }
+```
 
-## 8. How It Works
-1. User submits login credentials.
-2. Spring Security calls `CustomUserDetailsService.loadUserByUsername()`.
-3. Repository fetches `User` entity from DB.
-4. `CustomUserDetails` wraps entity into Spring Security's format.
-5. `PasswordEncoder` verifies the password.
-6. On success → Authentication stored in `SecurityContextHolder`.
+---
 
-## 9. When to Use
-✅ Best for:
-- Applications already using **Spring Data JPA**.
-- Domain-driven design where entities map directly to tables.
-- Complex user-role relationships.
+## 6. When to Use
+✅ **Role-based** – For broad access rules (e.g., admin vs user).  
+✅ **URL-based** – For securing endpoints at the request level.  
+✅ **Method-level** – For securing business logic, independent of HTTP layer.
 
-⚠️ Avoid if:
-- Not using relational DB.
-- Need extremely high-performance auth with minimal ORM overhead (JDBC might be faster).
+⚠️ Best practice: **Combine layers** – e.g., secure endpoints AND service methods.
+
